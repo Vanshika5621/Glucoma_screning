@@ -1,0 +1,357 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#f5f7fa">
+    <title>Fundus Image Research Demo</title>
+    <style>
+      :root {
+        color-scheme: light;
+        font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        color: #172b3a;
+        background: #f5f7fa;
+        font-synthesis: none;
+        text-rendering: optimizeLegibility;
+        --page: #f5f7fa;
+        --surface: #fff;
+        --text-muted: #4b5d6b;
+        --border: #d6dee5;
+        --primary: #155e63;
+        --primary-hover: #10494d;
+        --info-bg: #edf3f6;
+        --warning-bg: #fff4e5;
+        --warning-text: #713b00;
+        --error-bg: #fceeee;
+        --error-text: #8a2525;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        min-width: 320px;
+        margin: 0;
+        padding: 48px 24px;
+      }
+
+      main {
+        width: min(100%, 760px);
+        margin: 0 auto;
+        padding: 32px;
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        background: var(--surface);
+      }
+
+      h1 {
+        margin: 0 0 12px;
+        font-size: clamp(1.75rem, 5vw, 2rem);
+        line-height: 1.2;
+      }
+
+      h2 {
+        margin: 0 0 12px;
+        font-size: 1.25rem;
+        line-height: 1.3;
+      }
+
+      p {
+        line-height: 1.55;
+      }
+
+      .intro,
+      .help {
+        color: var(--text-muted);
+      }
+
+      .section {
+        margin-top: 32px;
+      }
+
+      .notice,
+      .status {
+        padding: 16px;
+        border-radius: 8px;
+      }
+
+      .notice {
+        margin-top: 24px;
+        border-left: 4px solid #9a5700;
+        background: var(--warning-bg);
+        color: var(--warning-text);
+      }
+
+      .status {
+        margin: 16px 0;
+        background: var(--info-bg);
+      }
+
+      .status[data-state="error"] {
+        background: var(--error-bg);
+        color: var(--error-text);
+      }
+
+      .upload-box {
+        padding: 24px;
+        border: 1px dashed #82949e;
+        border-radius: 8px;
+      }
+
+      label {
+        display: block;
+        margin-bottom: 8px;
+        font-weight: 650;
+      }
+
+      input[type="file"] {
+        display: block;
+        width: 100%;
+        margin: 12px 0;
+        color: var(--text-muted);
+      }
+
+      input[type="file"]::file-selector-button {
+        min-height: 44px;
+        margin-right: 12px;
+        padding: 8px 14px;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        background: var(--surface);
+        color: var(--text);
+        font: inherit;
+        font-weight: 600;
+        cursor: pointer;
+      }
+
+      button {
+        min-height: 44px;
+        padding: 10px 16px;
+        border: 0;
+        border-radius: 6px;
+        background: var(--primary);
+        color: #fff;
+        font: inherit;
+        font-weight: 650;
+        cursor: pointer;
+      }
+
+      button:hover:not(:disabled) {
+        background: var(--primary-hover);
+      }
+
+      button:disabled {
+        cursor: not-allowed;
+        opacity: 0.65;
+      }
+
+      :focus-visible {
+        outline: 3px solid #176a9b;
+        outline-offset: 3px;
+      }
+
+      #preview {
+        display: none;
+        max-width: min(100%, 360px);
+        max-height: 360px;
+        margin-top: 16px;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        object-fit: contain;
+      }
+
+      a {
+        color: var(--primary);
+        text-underline-offset: 3px;
+      }
+
+      @media (max-width: 600px) {
+        body {
+          padding: 20px 16px;
+        }
+
+        main {
+          padding: 20px;
+        }
+
+        .upload-box {
+          padding: 16px;
+        }
+
+        button {
+          width: 100%;
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        *,
+        *::before,
+        *::after {
+          scroll-behavior: auto !important;
+          animation-duration: 0.01ms !important;
+          animation-iteration-count: 1 !important;
+          transition-duration: 0.01ms !important;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Fundus image research demo</h1>
+      <p class="intro">
+        Upload a retinal fundus photo to prepare for an experimental research
+        workflow. A regular selfie of the front of the eye is not supported.
+      </p>
+
+      <section class="section" aria-labelledby="upload-heading">
+        <h2 id="upload-heading">Choose a retinal image</h2>
+        <p class="help">
+          Use a JPEG or PNG fundus photograph that shows the retina and optic
+          nerve. Maximum file size: 10 MB. If you choose to validate it, the
+          image is sent only to this locally running app and not retained after
+          the request.
+        </p>
+
+        <form id="upload-form" class="upload-box">
+          <label for="fundus-image">Retinal fundus image</label>
+          <input
+            id="fundus-image"
+            name="file"
+            type="file"
+            accept=".jpg,.jpeg,.png,image/jpeg,image/png"
+            required
+            aria-describedby="image-help"
+          >
+          <p id="image-help" class="help">
+            This demo cannot verify that an image is actually a fundus photo.
+          </p>
+          <img id="preview" alt="Preview of the selected image">
+          <p id="upload-status" class="status" role="status" aria-live="polite">
+            Checking whether a model is configured…
+          </p>
+          <button id="submit-button" type="submit" disabled>
+            Validate image (no prediction)
+          </button>
+        </form>
+      </section>
+
+      <aside class="notice" aria-label="Important medical information">
+        <strong>Important:</strong> This learning project is not a medical
+        device and cannot diagnose glaucoma. No trained model is currently
+        configured, so no prediction or confidence score will be produced.
+        Do not use this app for medical decisions. Contact an eye-care
+        professional about health concerns.
+      </aside>
+
+      <p><a href="/docs">Open the API documentation</a></p>
+    </main>
+
+    <script>
+      const form = document.querySelector("#upload-form");
+      const input = document.querySelector("#fundus-image");
+      const status = document.querySelector("#upload-status");
+      const submitButton = document.querySelector("#submit-button");
+      const preview = document.querySelector("#preview");
+      const maxBytes = 10 * 1024 * 1024;
+      let serviceAvailable = false;
+      let modelAvailable = false;
+      let previewUrl = null;
+
+      function showStatus(message, isError = false) {
+        status.textContent = message;
+        status.dataset.state = isError ? "error" : "info";
+      }
+
+      fetch("/api/health")
+        .then((response) => {
+          if (!response.ok) {
+            throw new Error("Unable to check application status.");
+          }
+          return response.json();
+        })
+        .then((health) => {
+          serviceAvailable = health.status === "ok";
+          modelAvailable = health.predictions_available;
+          submitButton.disabled = true;
+          showStatus(
+            modelAvailable
+              ? "A research model is available. Uploads are not retained."
+              : "App is running, but no model is configured. You can validate the file format; no prediction will be made."
+          );
+        })
+        .catch(() => {
+          showStatus(
+            "Application status could not be checked. Refresh the page to try again.",
+            true
+          );
+        });
+
+      input.addEventListener("change", () => {
+        if (previewUrl) {
+          URL.revokeObjectURL(previewUrl);
+          previewUrl = null;
+        }
+        preview.removeAttribute("src");
+        preview.style.display = "none";
+        submitButton.disabled = true;
+
+        const file = input.files[0];
+        if (!file) return;
+        if (!["image/jpeg", "image/png"].includes(file.type)) {
+          input.value = "";
+          showStatus("Choose a JPEG or PNG retinal image.", true);
+          return;
+        }
+        if (file.size > maxBytes) {
+          input.value = "";
+          showStatus("The image is larger than 10 MB. Choose a smaller file.", true);
+          return;
+        }
+
+        previewUrl = URL.createObjectURL(file);
+        preview.src = previewUrl;
+        preview.style.display = "block";
+        submitButton.disabled = !serviceAvailable;
+        showStatus(
+          modelAvailable
+            ? "Image selected. Choose Check image to continue."
+            : "Image selected. You can validate its file format; no prediction will be made."
+        );
+      });
+
+      form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        if (!serviceAvailable || !input.files[0]) return;
+
+        submitButton.disabled = true;
+        showStatus(
+          modelAvailable ? "Checking the image…" : "Validating the image file…"
+        );
+        const data = new FormData();
+        data.append("file", input.files[0]);
+
+        try {
+          const endpoint = modelAvailable ? "/api/predict" : "/api/images/validate";
+          const response = await fetch(endpoint, {
+            method: "POST",
+            body: data,
+          });
+          const result = await response.json();
+          if (!response.ok) {
+            throw new Error(result.detail || "The image could not be checked.");
+          }
+          showStatus(result.message || "Image received.");
+        } catch (error) {
+          showStatus(error.message, true);
+        } finally {
+          submitButton.disabled = !serviceAvailable || !input.files[0];
+        }
+      });
+
+      window.addEventListener("pagehide", () => {
+        if (previewUrl) URL.revokeObjectURL(previewUrl);
+      });
+    </script>
+  </body>
+</html>

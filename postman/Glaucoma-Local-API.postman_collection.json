@@ -1,0 +1,226 @@
+{
+  "info": {
+    "_postman_id": "4b5a8070-7da5-4db4-b6dc-ea6482e4fa90",
+    "name": "Glaucoma Screening Local API",
+    "description": "Local QA only. Use synthetic or authorized non-identifying images. Do not save patient images or sensitive responses in Postman history or exported collections.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://127.0.0.1:8000"
+    },
+    {
+      "key": "sampleImagePath",
+      "value": ""
+    },
+    {
+      "key": "unsupportedImagePath",
+      "value": ""
+    },
+    {
+      "key": "malformedImagePath",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "Health and availability",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/api/health"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Health returns HTTP 200', function () { pm.response.to.have.status(200); });",
+              "const body = pm.response.json();",
+              "pm.test('Health reports application and model state separately', function () {",
+              "  pm.expect(body.status).to.eql('ok');",
+              "  pm.expect(body.predictions_available).to.be.a('boolean');",
+              "  pm.expect(body.model_message).to.be.a('string');",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Validate supported image",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            {
+              "key": "file",
+              "type": "file",
+              "src": "{{sampleImagePath}}"
+            }
+          ]
+        },
+        "url": "{{baseUrl}}/api/images/validate"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Supported image returns HTTP 200', function () { pm.response.to.have.status(200); });",
+              "const body = pm.response.json();",
+              "pm.test('Validation reports actual format and dimensions without claiming fundus verification', function () {",
+              "  pm.expect(['JPEG', 'PNG']).to.include(body.format);",
+              "  pm.expect(body.width).to.be.above(0);",
+              "  pm.expect(body.height).to.be.above(0);",
+              "  pm.expect(body.message).to.include('Fundus content is not verified');",
+              "  pm.expect(body.message).to.include('no prediction was made');",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Predict with configured model",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            {
+              "key": "file",
+              "type": "file",
+              "src": "{{sampleImagePath}}"
+            }
+          ]
+        },
+        "url": "{{baseUrl}}/api/predict"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Prediction returns HTTP 200 when a compatible model is configured', function () { pm.response.to.have.status(200); });",
+              "const body = pm.response.json();",
+              "pm.test('Prediction labels and explanation fields are present', function () {",
+              "  pm.expect(['normal', 'glaucoma']).to.include(body.prediction);",
+              "  pm.expect(body.confidence).to.be.within(0, 1);",
+              "  pm.expect(body.model_name).to.be.a('string');",
+              "  pm.expect(body.explanation_method).to.eql('Grad-CAM');",
+              "  pm.expect(body.explanation_note).to.include('approximate');",
+              "  pm.expect(body.disclaimer).to.include('not a diagnosis');",
+              "});",
+              "pm.test('Successful explanation contains real PNG data URLs', function () {",
+              "  if (body.explanation_error) {",
+              "    pm.expect(body.explanation_error).to.include('visualization is unavailable');",
+              "  } else {",
+              "    ['original_image', 'gradcam_heatmap', 'gradcam_overlay'].forEach(function (key) {",
+              "      pm.expect(body[key]).to.match(/^data:image\\/png;base64,/);",
+              "    });",
+              "  }",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Reject unsupported image format",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            {
+              "key": "file",
+              "type": "file",
+              "src": "{{unsupportedImagePath}}"
+            }
+          ]
+        },
+        "url": "{{baseUrl}}/api/images/validate"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Unsupported image is rejected with HTTP 415', function () { pm.response.to.have.status(415); });",
+              "pm.test('Response explains supported image types', function () {",
+              "  pm.expect(pm.response.json().detail).to.include('Only JPEG and PNG');",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Reject malformed image",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            {
+              "key": "file",
+              "type": "file",
+              "src": "{{malformedImagePath}}"
+            }
+          ]
+        },
+        "url": "{{baseUrl}}/api/images/validate"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Malformed image is rejected with HTTP 400', function () { pm.response.to.have.status(400); });",
+              "pm.test('Response does not return a stack trace', function () {",
+              "  pm.expect(pm.response.text()).not.to.include('Traceback');",
+              "  pm.expect(pm.response.json().detail).to.include('not a valid JPEG or PNG');",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Metrics availability",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/api/metrics"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Metrics returns HTTP 200 when available or absent', function () { pm.response.to.have.status(200); });",
+              "const body = pm.response.json();",
+              "pm.test('Unavailable metrics do not contain fabricated values', function () {",
+              "  pm.expect(body.available).to.be.a('boolean');",
+              "  if (!body.available) pm.expect(body.metrics).to.be.oneOf([undefined, null]);",
+              "});"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}
