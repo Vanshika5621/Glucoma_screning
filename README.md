@@ -106,57 +106,42 @@ For a production-style local build, run `npm run build` in `frontend/`; then
 start FastAPI and open `http://127.0.0.1:8000`. FastAPI serves the React build
 from `frontend/dist`. API documentation is at `http://127.0.0.1:8000/docs`.
 
-## Deploy the frontend to Netlify
+## Deploy the frontend to Vercel
 
-The repository includes a root `netlify.toml`. When importing this repository
-into Netlify, it configures the frontend build as:
+The frontend is a static Vite application. Import this GitHub repository into
+Vercel and set **Root Directory** to `frontend`. Vercel should detect Vite; use
+these settings if it asks:
 
-- Base directory: `frontend`
+- Framework preset: Vite
 - Build command: `npm run build`
-- Publish directory: `dist`
-- Node.js: 20
+- Output directory: `dist`
+- Install command: `npm install`
 
-The frontend is static and can be deployed to Netlify. The FastAPI/PyTorch
-prediction backend is a separate service and must be deployed to a Python host;
-Netlify does not run this project's FastAPI server or provide its model
-checkpoint. After deploying the backend, set this environment variable in
-Netlify under **Site configuration → Environment variables**:
+`frontend/vercel.json` sends app routes to the frontend entry point. The
+FastAPI/PyTorch prediction backend is a separate service; deploying the static
+frontend does not deploy the API or its model checkpoint. After deploying the
+backend separately, add this environment variable in Vercel under
+**Project Settings → Environment Variables**:
 
 ```text
 VITE_API_BASE_URL=https://YOUR-BACKEND-HOST/api
 ```
 
-Set `CORS_ALLOWED_ORIGINS` on the backend host to the exact public Netlify site
+Set `CORS_ALLOWED_ORIGINS` on the backend host to the exact public Vercel site
 origin, without a path or trailing slash. For example:
 
 ```text
-CORS_ALLOWED_ORIGINS=https://YOUR-SITE.netlify.app
+CORS_ALLOWED_ORIGINS=https://YOUR-SITE.vercel.app
 ```
 
-Add any custom domain as another comma-separated origin. Keep the model
-checkpoint on the backend host and set `GLAUCOMA_MODEL_PATH` to its location.
-Then trigger a new Netlify deploy so the frontend build includes the API URL.
-Without a reachable backend and compatible checkpoint, the static site can
-load but image predictions will not be available.
+Add any custom domain as another comma-separated origin. Set
+`VITE_API_BASE_URL` before deploying or redeploy after changing it, because
+Vite embeds this value into the static frontend at build time.
 
-### Deploy the API to Render
-
-The root `render.yaml` defines a free Python web service, installs
-`requirements.txt`, runs Uvicorn on Render's assigned port, and uses
-`/api/health` for the health check. In Render, choose **New → Blueprint**, select
-this GitHub repository, and confirm the Blueprint. Set `CORS_ALLOWED_ORIGINS`
-to the exact Netlify site origin when prompted or in the service environment
-settings.
-
-The model checkpoint is intentionally excluded from Git. Therefore, the free
-Blueprint can deploy the API, but `/api/health` will report predictions
-unavailable until a compatible checkpoint is provided to the service. Render
-free services do not provide persistent disks for keeping this local model
-file. Do not put model weights in a public Git repository; use an authorized
-private model-storage option or a paid persistent disk, and set
-`GLAUCOMA_MODEL_PATH` accordingly. After the Render service is live, set
-`VITE_API_BASE_URL` in Netlify to `https://YOUR-RENDER-SERVICE.onrender.com/api`
-and redeploy the frontend.
+The model checkpoint is intentionally excluded from Git. Until a separately
+hosted backend has a compatible checkpoint configured with
+`GLAUCOMA_MODEL_PATH`, the Vercel site can display the dashboard but prediction
+will remain unavailable. Do not put model weights in a public Git repository.
 
 ## API
 
