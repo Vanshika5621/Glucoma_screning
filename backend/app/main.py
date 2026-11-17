@@ -3,8 +3,10 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.cors import CORSMiddleware
 
 from app.api.routes import health, metrics, predictions
+from app.core.config import cors_allowed_origins
 
 STATIC_INDEX = Path(__file__).parent / "static" / "index.html"
 FRONTEND_DIST = Path(__file__).resolve().parents[2] / "frontend" / "dist"
@@ -12,6 +14,13 @@ FRONTEND_DIST = Path(__file__).resolve().parents[2] / "frontend" / "dist"
 app = FastAPI(
     title="Glaucoma Fundus Research Demo",
     description="Local academic prototype; not for diagnosis or care decisions.",
+)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=cors_allowed_origins(),
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["Content-Type"],
 )
 app.include_router(health.router, prefix="/api")
 app.include_router(predictions.router, prefix="/api")

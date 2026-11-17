@@ -106,6 +106,39 @@ For a production-style local build, run `npm run build` in `frontend/`; then
 start FastAPI and open `http://127.0.0.1:8000`. FastAPI serves the React build
 from `frontend/dist`. API documentation is at `http://127.0.0.1:8000/docs`.
 
+## Deploy the frontend to Netlify
+
+The repository includes a root `netlify.toml`. When importing this repository
+into Netlify, it configures the frontend build as:
+
+- Base directory: `frontend`
+- Build command: `npm run build`
+- Publish directory: `dist`
+- Node.js: 20
+
+The frontend is static and can be deployed to Netlify. The FastAPI/PyTorch
+prediction backend is a separate service and must be deployed to a Python host;
+Netlify does not run this project's FastAPI server or provide its model
+checkpoint. After deploying the backend, set this environment variable in
+Netlify under **Site configuration → Environment variables**:
+
+```text
+VITE_API_BASE_URL=https://YOUR-BACKEND-HOST/api
+```
+
+Set `CORS_ALLOWED_ORIGINS` on the backend host to the exact public Netlify site
+origin, without a path or trailing slash. For example:
+
+```text
+CORS_ALLOWED_ORIGINS=https://YOUR-SITE.netlify.app
+```
+
+Add any custom domain as another comma-separated origin. Keep the model
+checkpoint on the backend host and set `GLAUCOMA_MODEL_PATH` to its location.
+Then trigger a new Netlify deploy so the frontend build includes the API URL.
+Without a reachable backend and compatible checkpoint, the static site can
+load but image predictions will not be available.
+
 ## API
 
 - `GET /api/health` reports application and model availability separately.

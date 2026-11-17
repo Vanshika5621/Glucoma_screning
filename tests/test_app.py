@@ -38,6 +38,32 @@ def test_health_reports_model_unavailable(monkeypatch) -> None:
     assert "No trained" in response.json()["model_message"]
 
 
+def test_cors_allows_configured_frontend_origin() -> None:
+    response = client.options(
+        "/api/health",
+        headers={
+            "Origin": "http://localhost:5173",
+            "Access-Control-Request-Method": "GET",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == "http://localhost:5173"
+
+
+def test_cors_does_not_allow_unconfigured_frontend_origin() -> None:
+    response = client.options(
+        "/api/health",
+        headers={
+            "Origin": "https://untrusted.example",
+            "Access-Control-Request-Method": "GET",
+        },
+    )
+
+    assert response.status_code == 400
+    assert "access-control-allow-origin" not in response.headers
+
+
 def test_metrics_endpoint_reports_unavailable_without_fake_values(
     monkeypatch,
     tmp_path,

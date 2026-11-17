@@ -5,8 +5,12 @@ import type {
   PredictionResponse,
 } from "../types/api";
 
+const apiBaseUrl = (
+  import.meta.env.VITE_API_BASE_URL?.trim() || "/api"
+).replace(/\/+$/, "");
+
 const client = axios.create({
-  baseURL: "/api",
+  baseURL: apiBaseUrl,
   timeout: 60_000,
 });
 

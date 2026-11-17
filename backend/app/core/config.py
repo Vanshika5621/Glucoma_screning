@@ -24,3 +24,15 @@ def max_upload_bytes() -> int:
     if limit < 1:
         raise ValueError("MAX_UPLOAD_BYTES must be a positive integer.")
     return limit
+
+
+def cors_allowed_origins() -> list[str]:
+    configured = os.getenv("CORS_ALLOWED_ORIGINS")
+    if configured is None:
+        return [
+            "http://127.0.0.1:5173",
+            "http://localhost:5173",
+        ]
+
+    origins = [origin.strip().rstrip("/") for origin in configured.split(",")]
+    return [origin for origin in origins if origin]
