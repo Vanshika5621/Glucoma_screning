@@ -139,6 +139,25 @@ Then trigger a new Netlify deploy so the frontend build includes the API URL.
 Without a reachable backend and compatible checkpoint, the static site can
 load but image predictions will not be available.
 
+### Deploy the API to Render
+
+The root `render.yaml` defines a free Python web service, installs
+`requirements.txt`, runs Uvicorn on Render's assigned port, and uses
+`/api/health` for the health check. In Render, choose **New → Blueprint**, select
+this GitHub repository, and confirm the Blueprint. Set `CORS_ALLOWED_ORIGINS`
+to the exact Netlify site origin when prompted or in the service environment
+settings.
+
+The model checkpoint is intentionally excluded from Git. Therefore, the free
+Blueprint can deploy the API, but `/api/health` will report predictions
+unavailable until a compatible checkpoint is provided to the service. Render
+free services do not provide persistent disks for keeping this local model
+file. Do not put model weights in a public Git repository; use an authorized
+private model-storage option or a paid persistent disk, and set
+`GLAUCOMA_MODEL_PATH` accordingly. After the Render service is live, set
+`VITE_API_BASE_URL` in Netlify to `https://YOUR-RENDER-SERVICE.onrender.com/api`
+and redeploy the frontend.
+
 ## API
 
 - `GET /api/health` reports application and model availability separately.
