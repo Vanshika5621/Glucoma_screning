@@ -11,10 +11,17 @@
   text-rendering: optimizeLegibility;
 }
 
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  color: #e6edf2;
+  background: #10191f;
+}
+
 body {
   min-width: 320px;
   min-height: 100vh;
   margin: 0;
+  background: inherit;
 }
 
 button,
@@ -27,6 +34,30 @@ input {
   border-radius: 14px;
   background: #fff;
   box-shadow: 0 8px 26px rgb(23 43 58 / 6%);
+}
+
+:root[data-theme="dark"] .panel {
+  border-color: #34444f;
+  background: #19262e;
+  box-shadow: 0 8px 26px rgb(0 0 0 / 18%);
+}
+
+:root[data-theme="dark"] .bg-slate-50 {
+  background-color: #202f38;
+}
+
+:root[data-theme="dark"] .bg-slate-100,
+:root[data-theme="dark"] .hover\:bg-slate-100:hover {
+  background-color: #2a3a45;
+}
+
+:root[data-theme="dark"] .text-muted {
+  color: #b6c4ce;
+}
+
+:root[data-theme="dark"] .border-line,
+:root[data-theme="dark"] .divide-line > :not([hidden]) ~ :not([hidden]) {
+  border-color: #34444f;
 }
 
 .eyebrow {

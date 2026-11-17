@@ -1,10 +1,54 @@
+from collections import defaultdict
+from hashlib import sha256
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
-from sklearn.model_selection import StratifiedGroupKFold, train_test_split
+from sklearn.model_selection import StratifiedGroupKFold
 
 LABEL_TO_INDEX = {"normal": 0, "glaucoma": 1}
+
+
+def require_patient_ids(frame: pd.DataFrame) -> pd.DataFrame:
+    if "patient_id" not in frame.columns:
+        raise ValueError(
+            "Patient-wise splitting requires genuine patient_id values from "
+            "the dataset source; image-level fallback is disabled."
+        )
+    patient_ids = frame["patient_id"].astype("string").str.strip()
+    if patient_ids.isna().any() or patient_ids.eq("").any():
+        raise ValueError(
+            "patient_id contains missing values or blanks; patient-wise "
+            "splitting cannot continue. Do not derive patient IDs from image "
+            "filenames or row numbers."
+        )
+    normalized = frame.copy()
+    normalized["patient_id"] = patient_ids
+    return normalized
+
+
+def _validate_unique_image_content(frame: pd.DataFrame) -> None:
+    paths_by_digest: dict[str, list[str]] = defaultdict(list)
+    for raw_path in frame["image_path"]:
+        path = Path(raw_path)
+        digest = sha256()
+        with path.open("rb") as image_file:
+            for chunk in iter(lambda: image_file.read(1024 * 1024), b""):
+                digest.update(chunk)
+        paths_by_digest[digest.hexdigest()].append(str(path))
+
+    duplicates = [
+        paths for paths in paths_by_digest.values() if len(paths) > 1
+    ]
+    if duplicates:
+        examples = "; ".join(
+            ", ".join(Path(path).name for path in group)
+            for group in duplicates[:3]
+        )
+        raise ValueError(
+            f"Manifest contains {len(duplicates)} groups of byte-identical "
+            f"images. Remove duplicates before splitting: {examples}"
+        )
 
 
 def _stratified_group_holdout(
@@ -120,6 +164,7 @@ def load_manifest(manifest_path: Path) -> pd.DataFrame:
         raise ValueError("Manifest contains duplicate image paths.")
     if frame["label"].nunique() != 2:
         raise ValueError("Manifest must contain both normal and glaucoma samples.")
+    _validate_unique_image_content(frame)
     return frame.reset_index(drop=True)
 
 
@@ -129,7 +174,7 @@ def split_manifest(
     test_fraction: float = 0.15,
     validation_fraction: float = 0.15,
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
-    frame = frame.reset_index(drop=True)
+    frame = require_patient_ids(frame.reset_index(drop=True))
     if not 0 < test_fraction < 1 or not 0 < validation_fraction < 1:
         raise ValueError("Split fractions must be between zero and one.")
     if test_fraction + validation_fraction >= 1:
@@ -219,47 +264,24 @@ def split_manifest(
                 )
         return split_frames
 
-    if "patient_id" in frame.columns:
-        patient_ids = frame["patient_id"].astype("string").str.strip()
-        if patient_ids.isna().any() or patient_ids.eq("").any():
-            raise ValueError(
-                "patient_id is present but contains missing values or blanks; "
-                "repair the manifest or remove the column to use image-level "
-                "splitting."
-            )
-        groups = patient_ids.to_numpy()
-        train_validation_indices, test_indices = _stratified_group_holdout(
-            indices,
-            labels,
-            groups,
-            test_fraction,
-            seed,
-            "test",
-        )
-        remaining_fraction = validation_fraction / (1 - test_fraction)
-        train_indices, validation_indices = _stratified_group_holdout(
-            train_validation_indices,
-            labels[train_validation_indices],
-            groups[train_validation_indices],
-            remaining_fraction,
-            seed + 1,
-            "validation",
-        )
-    else:
-        indices = indices.to_numpy()
-        train_validation_indices, test_indices = train_test_split(
-            indices,
-            test_size=test_fraction,
-            random_state=seed,
-            stratify=labels,
-        )
-        relative_validation_fraction = validation_fraction / (1 - test_fraction)
-        train_indices, validation_indices = train_test_split(
-            train_validation_indices,
-            test_size=relative_validation_fraction,
-            random_state=seed + 1,
-            stratify=labels[train_validation_indices],
-        )
+    groups = frame["patient_id"].to_numpy()
+    train_validation_indices, test_indices = _stratified_group_holdout(
+        indices,
+        labels,
+        groups,
+        test_fraction,
+        seed,
+        "test",
+    )
+    remaining_fraction = validation_fraction / (1 - test_fraction)
+    train_indices, validation_indices = _stratified_group_holdout(
+        train_validation_indices,
+        labels[train_validation_indices],
+        groups[train_validation_indices],
+        remaining_fraction,
+        seed + 1,
+        "validation",
+    )
 
     splits = tuple(
         frame.loc[split_indices].reset_index(drop=True)
@@ -271,14 +293,13 @@ def split_manifest(
                 f"The {split_name} split does not contain both classes. "
                 "Add more patients/images or adjust the split fractions."
             )
-    if "patient_id" in frame.columns:
-        train_patients = set(splits[0]["patient_id"].astype(str))
-        validation_patients = set(splits[1]["patient_id"].astype(str))
-        test_patients = set(splits[2]["patient_id"].astype(str))
-        if (
-            train_patients & validation_patients
-            or train_patients & test_patients
-            or validation_patients & test_patients
-        ):
-            raise RuntimeError("Patient leakage detected between data splits.")
+    train_patients = set(splits[0]["patient_id"].astype(str))
+    validation_patients = set(splits[1]["patient_id"].astype(str))
+    test_patients = set(splits[2]["patient_id"].astype(str))
+    if (
+        train_patients & validation_patients
+        or train_patients & test_patients
+        or validation_patients & test_patients
+    ):
+        raise RuntimeError("Patient leakage detected between data splits.")
     return splits

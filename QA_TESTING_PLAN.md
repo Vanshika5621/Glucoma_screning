@@ -82,7 +82,7 @@ until it has actually been run and observed.
 
 ## 4. Baseline execution record
 
-Automated baseline recorded **2026-11-05**:
+Historical automated baseline recorded **2026-11-05**:
 
 - Python: `.venv/bin/python -m pytest` — **39 passed**. One non-blocking
   Starlette deprecation warning notes that its TestClient currently uses
@@ -98,8 +98,8 @@ Automated baseline recorded **2026-11-05**:
   is installed/available in this environment; its requests have not been
   executed from Postman.
 - `.gitignore` rules were reviewed and updated to ignore all generated report
-  contents. Git-based tracked/ignored status cannot be verified because this
-  workspace is not a Git repository.
+  contents. The current workspace is a Git repository; a dedicated
+  tracked/ignored audit remains a release check.
 - Browser responsive smoke: core upload/result/metrics sections visible with
   a real prediction/Grad-CAM result and no horizontal overflow at widths
   **320, 375, 768, 1024, 1280, and 1440 px**. Keyboard focus on the upload
@@ -115,6 +115,24 @@ Automated baseline recorded **2026-11-05**:
   held-out performance evidence and is not included in the test-set metrics.
 - Manual Postman execution, responsive-device checks, persistence inspection,
   and privacy/security review have **not** been recorded.
+
+Latest verification after the image preprocessing checks:
+
+- Python: `.venv/bin/python -m pytest` — **56 passed**; one non-blocking
+  Starlette/httpx deprecation warning.
+- Frontend: `npm test -- --run` — **9 passed**.
+- Frontend: `npm run build` — **passed**, including TypeScript checking and
+  the Vite production build.
+- JPEG, PNG, BMP, GIF, TIFF, and WEBP were each verified through image
+  decoding/preprocessing; ICO remains rejected as unsupported.
+- These are code tests only. No training, cross-validation, final test-set
+  evaluation, or new model metrics were produced.
+
+Dataset audit on local REFUGE fundus photos found 1,200 labelled images:
+360 normal and 40 glaucoma in each official partition, zero missing image
+files, and zero byte-identical duplicate groups. The metadata `patient_id`
+field is blank for every image, so patient-wise training is blocked until
+genuine identifiers are provided by an authorized source.
 
 ## 5. Unit testing strategy
 
@@ -138,6 +156,17 @@ error branches; never report mocked outputs as real model predictions.
 | UNIT-011 | Generate class-specific Grad-CAM map | Deterministic tiny test classifier and tensor | Finite normalized map; target layer hook removed after execution | Pytest asserts finite normalized map; hook cleanup not separately asserted | PARTIAL |
 | UNIT-012 | Align and encode explanation visuals | Synthetic image and heatmap | Original, heatmap, and overlay are valid same-size PNG data URLs | Pytest decodes all three and checks dimensions | PASS |
 | UNIT-013 | Preserve existing experiment files | Non-empty output directory | New run refused; existing content unchanged | Pytest verifies exception and unchanged file | PASS |
+| UNIT-014 | Select threshold using validation recall constraint | Validation labels and glaucoma probabilities | Highest-precision threshold achieving requested recall is returned | Pytest verifies threshold, recall, and precision | PASS |
+| UNIT-015 | Reject under-sized stratified k-fold input | Four glaucoma patients with five folds requested | Clear error; no incomplete five-fold summary | Pytest expects `ValueError` | PASS |
+| UNIT-016 | Keep stratified patient k-fold partitions disjoint | Balanced synthetic dataset with distinct patient IDs | Five folds; both classes in each holdout; no patient overlap | Pytest checks all five fold outputs | PASS |
+| UNIT-017 | Reject incomplete patient identifiers in k-fold | Patient-wise manifest with a missing ID | Clear error; no image-level fallback | Pytest expects `ValueError` | PASS |
+| UNIT-018 | Reject missing patient IDs for any split | Two-class manifest without `patient_id` | Clear error; no image-level fallback | Pytest expects `ValueError` | PASS |
+| UNIT-019 | Detect exact duplicate image content | Two paths containing byte-identical images | Manifest rejected before train/test splitting | Pytest expects `ValueError` | PASS |
+| UNIT-020 | Reject patient overlap across official partitions | Official train/validation/test data reuses one patient ID | Clear leakage error before training or evaluation | Pytest expects `RuntimeError` | PASS |
+| UNIT-021 | Convert grayscale and RGBA inputs to RGB | Grayscale and alpha-channel images | Both decode to 224 × 224 RGB images | Pytest checks mode, size, and channel shape | PASS |
+| UNIT-022 | Apply exact ImageNet normalization | Uniform RGB image with known channel values | Each channel matches configured mean/std normalization | Pytest compares output tensor values to calculated expected values | PASS |
+| UNIT-023 | Keep validation and prediction preprocessing identical | Same image passed through validation dataset and shared inference transforms | Identical normalized tensor and label mapping | Pytest compares exact tensors | PASS |
+| API-011 | Reject invalid prediction image before model inference | Corrupt bytes uploaded to `/api/predict` | HTTP 400; inference function is not called | Pytest verifies status, error, and no inference call | PASS |
 
 ## 6. Backend API testing strategy (pytest and Postman)
 
@@ -169,7 +198,7 @@ limits rather than allocating dangerously large images.
 |---|---|---|---|---|---|
 | IMG-001 | Valid PNG upload | Well-formed PNG under limits | HTTP 200 from validate endpoint | Pytest passes | PASS |
 | IMG-002 | Corrupt/non-image bytes | Arbitrary text bytes named `.jpg` | HTTP 400; useful invalid-image message | Pytest passes | PASS |
-| IMG-003 | Unsupported but decodable format | BMP image | HTTP 415; only JPEG/PNG accepted | Pytest passes | PASS |
+| IMG-003 | Unsupported but decodable format | ICO image | HTTP 415; only the documented raster formats are accepted | Pytest passes | PASS |
 | IMG-004 | Empty upload | Zero bytes | HTTP 400; no inference | Not covered by recorded test baseline | NOT RUN |
 | IMG-005 | Upload exceeds configured byte limit | Payload larger than `MAX_UPLOAD_BYTES` | HTTP 413 before decode/inference | Pytest tests a monkeypatched 4-byte limit and rejects 5 bytes | PASS |
 | IMG-006 | Decoded dimensions exceed pixel cap | Image with pixel count greater than configured maximum | HTTP 413; decode-bomb warning/error handled | Pytest uses a small monkeypatched cap and verifies 413 | PASS |
@@ -177,6 +206,7 @@ limits rather than allocating dangerously large images.
 | IMG-008 | Truncated JPEG/PNG | Incomplete image stream | HTTP 400; no inference or traceback | Not covered by recorded test baseline | NOT RUN |
 | IMG-009 | Valid JPEG upload | Well-formed JPEG under limits | HTTP 200 with detected format and dimensions | No direct JPEG API test recorded | NOT RUN |
 | IMG-010 | Replace selected image in UI | Select image A then image B | Preview updates; previous object URL released; stale result cleared | Browser interaction test not recorded | NOT RUN |
+| IMG-011 | Validate additional common raster formats | BMP, GIF, TIFF, and WEBP | HTTP 200; detected content format and dimensions; decoded for preprocessing | Pytest validates each format; focused runtime check confirms RGB 224×224 preprocessing | PASS |
 
 ## 8. Model loading, prediction, and explanation testing
 

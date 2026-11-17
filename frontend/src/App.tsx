@@ -1,123 +1,139 @@
-import { Suspense, lazy, useEffect, useState } from "react";
-import { getErrorMessage, getHealth, getMetrics } from "./api/client";
+import { useEffect, useState } from "react";
+import { getHealth } from "./api/client";
+import { HistoryPanel } from "./components/HistoryPanel";
 import { ResultPanel } from "./components/ResultPanel";
 import { UploadPanel } from "./components/UploadPanel";
+import {
+  createPredictionHistoryItem,
+  loadPredictionHistory,
+  MAX_SAVED_PREDICTIONS,
+  savePredictionHistory,
+} from "./history";
+import type { PredictionHistoryItem } from "./history";
+import { createThumbnail } from "./thumbnail";
 import type {
   HealthResponse,
-  MetricsResponse,
   PredictionResponse,
 } from "./types/api";
 
-const MetricsPanel = lazy(() => import("./components/MetricsPanel").then(
-  (module) => ({ default: module.MetricsPanel }),
-));
+const THEME_STORAGE_KEY = "glaucoma-screening-theme";
 
 export default function App() {
   const [health, setHealth] = useState<HealthResponse | null>(null);
-  const [healthError, setHealthError] = useState<string | null>(null);
-  const [metrics, setMetrics] = useState<MetricsResponse | null>(null);
   const [prediction, setPrediction] = useState<PredictionResponse | null>(null);
+  const [initialHistory] = useState(() => {
+    try {
+      return { items: loadPredictionHistory(), error: null };
+    } catch {
+      return {
+        items: [],
+        error: "Saved history could not be loaded from this browser.",
+      };
+    }
+  });
+  const [history, setHistory] = useState<PredictionHistoryItem[]>(
+    initialHistory.items,
+  );
+  const [historyMessage, setHistoryMessage] = useState<string | null>(
+    initialHistory.error,
+  );
+  const [isDark, setIsDark] = useState(() => {
+    try {
+      return window.localStorage.getItem(THEME_STORAGE_KEY) === "dark";
+    } catch {
+      return false;
+    }
+  });
 
   useEffect(() => {
     getHealth()
       .then(setHealth)
-      .catch((error: unknown) => setHealthError(getErrorMessage(error)));
-    getMetrics()
-      .then(setMetrics)
-      .catch(() =>
-        setMetrics({
-          available: false,
-          message: "Evaluation metrics could not be loaded. Refresh to try again.",
-        }),
-      );
+      .catch(() => setHealth(null));
   }, []);
 
-  return (
-    <main className="mx-auto min-h-screen max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-      <header className="mb-8 flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <p className="eyebrow">LOCAL RESEARCH PROTOTYPE</p>
-          <h1 className="mt-2 text-3xl font-bold tracking-tight">
-            Glaucoma image research dashboard
-          </h1>
-          <p className="mt-2 max-w-3xl text-sm leading-6 text-muted">
-            Experimental classification of retinal fundus photographs. This
-            dashboard is not a medical device and cannot diagnose glaucoma.
-          </p>
-        </div>
-        <div
-          className="rounded-full border border-line bg-white px-4 py-2 text-sm"
-          role="status"
-          aria-live="polite"
-        >
-          <span
-            className={`mr-2 inline-block h-2.5 w-2.5 rounded-full ${
-              health?.status === "ok" ? "bg-emerald-600" : "bg-slate-400"
-            }`}
-          />
-          {health?.status === "ok" ? "API online" : "Checking API…"}
-        </div>
-      </header>
+  useEffect(() => {
+    document.documentElement.dataset.theme = isDark ? "dark" : "light";
+    try {
+      window.localStorage.setItem(THEME_STORAGE_KEY, isDark ? "dark" : "light");
+    } catch {
+      setHistoryMessage("Theme preference could not be saved in this browser.");
+    }
+  }, [isDark]);
 
-      {(healthError || health?.model_message) && (
-        <div
-          className="mb-6 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-950"
-          role="status"
+  useEffect(() => {
+    try {
+      savePredictionHistory(history);
+    } catch {
+      setHistoryMessage(
+        "History could not be saved. Browser storage may be full or unavailable.",
+      );
+    }
+  }, [history]);
+
+  async function handlePrediction(
+    result: PredictionResponse | null,
+    file?: File,
+  ) {
+    setPrediction(result);
+    if (!result || !file) return;
+
+    setHistoryMessage(null);
+    let thumbnail = "";
+    try {
+      thumbnail = await createThumbnail(file);
+    } catch {
+      setHistoryMessage("Prediction saved without its image thumbnail.");
+    }
+    const item = createPredictionHistoryItem(
+      result.prediction,
+      result.confidence,
+      thumbnail,
+    );
+    setHistory((previous) =>
+      [item, ...previous].slice(0, MAX_SAVED_PREDICTIONS),
+    );
+  }
+
+  function clearHistory() {
+    setHistory([]);
+    setHistoryMessage(null);
+  }
+
+  return (
+    <main className="mx-auto flex min-h-screen max-w-5xl flex-col px-4 py-8 sm:px-6 lg:px-8">
+      <header className="mb-8 flex flex-wrap items-center justify-between gap-4">
+        <h1 className="text-3xl font-bold tracking-tight">Glaucoma screening</h1>
+        <button
+          type="button"
+          className="min-h-10 rounded-lg border border-line px-4 py-2 text-sm font-semibold hover:bg-slate-100"
+          aria-pressed={isDark}
+          onClick={() => setIsDark((current) => !current)}
         >
-          <strong>Model status:</strong>{" "}
-          {healthError ?? health?.model_message}
-          {!health?.predictions_available &&
-            " No prediction or confidence value will be shown until a model is configured."}
-        </div>
-      )}
+          {isDark ? "Light mode" : "Dark mode"}
+        </button>
+      </header>
 
       <div className="grid gap-6 lg:grid-cols-2">
         <UploadPanel
           predictionsAvailable={health?.predictions_available ?? false}
-          onPrediction={setPrediction}
+          onPrediction={handlePrediction}
         />
-        <ResultPanel result={prediction} />
+        <ResultPanel
+          result={prediction}
+          modelAvailable={health?.predictions_available ?? false}
+        />
       </div>
 
-      {metrics?.available ? (
-        <div className="mt-6">
-          <Suspense
-            fallback={
-              <p className="panel p-6 text-sm text-muted" role="status">
-                Loading evaluation charts…
-              </p>
-            }
-          >
-            <MetricsPanel response={metrics} />
-          </Suspense>
-        </div>
-      ) : (
-        <section
-          className="panel mt-6 p-6 sm:p-8"
-          aria-labelledby="metrics-title"
-        >
-          <p className="eyebrow">MODEL EVALUATION</p>
-          <h2 id="metrics-title" className="mt-2 text-xl font-semibold">
-            Performance dashboard
-          </h2>
-          <p className="mt-5 rounded-lg bg-slate-100 p-4 text-sm leading-6 text-muted">
-            {metrics?.message ?? "Loading evaluation report…"}
-          </p>
-        </section>
+      <HistoryPanel items={history} onClear={clearHistory} />
+      {historyMessage && (
+        <p className="mt-3 text-sm text-muted" role="status">
+          {historyMessage}
+        </p>
       )}
 
-      <footer className="mt-8 flex flex-wrap justify-between gap-3 border-t border-line pt-5 text-sm text-muted">
-        <p>
-          For learning and research only. Never use results for diagnosis or
-          treatment decisions.
-        </p>
-        <a
-          className="font-semibold text-primary underline underline-offset-4"
-          href="/docs"
-        >
-          API documentation
-        </a>
-      </footer>
+      <p className="mt-6 text-center text-sm text-muted">
+        Research use only. Not for diagnosis or treatment.
+      </p>
     </main>
   );
 }

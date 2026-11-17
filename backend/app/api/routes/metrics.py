@@ -34,6 +34,37 @@ def metrics() -> MetricsResponse | JSONResponse:
             content={"detail": "The evaluation report has an invalid format."},
         )
 
+    confusion = report.get("confusion_matrix")
+    if (
+        isinstance(confusion, list)
+        and len(confusion) == 2
+        and all(isinstance(row, list) and len(row) == 2 for row in confusion)
+        and all(isinstance(value, (int, float)) for row in confusion for value in row)
+    ):
+        normal_count = int(sum(confusion[0]))
+        glaucoma_count = int(sum(confusion[1]))
+        evaluation_samples = normal_count + glaucoma_count
+        report.setdefault(
+            "class_counts",
+            {"normal": normal_count, "glaucoma": glaucoma_count},
+        )
+        report.setdefault("positive_samples", glaucoma_count)
+        if evaluation_samples:
+            report.setdefault(
+                "normal_baseline_accuracy",
+                normal_count / evaluation_samples,
+            )
+    threshold_was_missing = "threshold" not in report
+    report.setdefault(
+        "evaluation_samples",
+        report.get("test_samples", 0),
+    )
+    report.setdefault("threshold", 0.5)
+    if "threshold_source" not in report and threshold_was_missing:
+        report["threshold_source"] = (
+            "legacy report fallback (0.5); not validation-selected"
+        )
+
     return MetricsResponse(
         available=True,
         message="Metrics from the latest local evaluation report.",

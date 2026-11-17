@@ -42,10 +42,15 @@ def build_image_transform(training: bool = False) -> transforms.Compose:
         operations.extend(
             [
                 transforms.RandomHorizontalFlip(p=0.5),
-                transforms.RandomRotation(degrees=8),
+                transforms.RandomRotation(degrees=15),
+                transforms.RandomResizedCrop(
+                    size=224,
+                    scale=(0.9, 1.0),
+                    ratio=(0.95, 1.05),
+                ),
                 transforms.ColorJitter(
-                    brightness=0.08,
-                    contrast=0.08,
+                    brightness=0.1,
+                    contrast=0.1,
                     saturation=0.05,
                 ),
             ]

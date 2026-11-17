@@ -2,6 +2,7 @@ from io import BytesIO
 
 from fastapi.testclient import TestClient
 from PIL import Image
+import pytest
 
 from app.main import app
 
@@ -64,6 +65,31 @@ def test_metrics_endpoint_reports_invalid_json(monkeypatch, tmp_path) -> None:
     assert response.json() == {"detail": "The evaluation report could not be read."}
 
 
+def test_metrics_endpoint_annotates_legacy_counts_without_inventing_metrics(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    from app.api.routes import metrics
+
+    report_path = tmp_path / "metrics.json"
+    report_path.write_text(
+        '{"model_name":"resnet50","test_samples":10,'
+        '"confusion_matrix":[[8,1],[1,0]]}',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(metrics, "metrics_path", lambda: report_path)
+
+    response = client.get("/api/metrics")
+
+    assert response.status_code == 200
+    result = response.json()["metrics"]
+    assert result["class_counts"] == {"normal": 9, "glaucoma": 1}
+    assert result["normal_baseline_accuracy"] == 0.9
+    assert result["threshold"] == 0.5
+    assert "legacy report fallback" in result["threshold_source"]
+    assert result.get("pr_auc") is None
+
+
 def test_image_validation_accepts_png_without_claiming_fundus_verification() -> None:
     response = client.post(
         "/api/images/validate",
@@ -110,19 +136,59 @@ def test_image_validation_rejects_non_image_payload() -> None:
     )
 
     assert response.status_code == 400
-    assert "not a valid JPEG or PNG" in response.json()["detail"]
+    assert "not a valid supported image" in response.json()["detail"]
 
 
-def test_image_validation_rejects_unsupported_format() -> None:
+def test_prediction_rejects_invalid_image_before_inference(monkeypatch) -> None:
+    from app.api.routes import predictions
+
+    called = False
+
+    def fake_predict(_content: bytes) -> dict[str, str | float]:
+        nonlocal called
+        called = True
+        return {}
+
+    monkeypatch.setattr(predictions, "predict_image", fake_predict)
+    response = client.post(
+        "/api/predict",
+        files={"file": ("sample.png", b"not an image", "image/png")},
+    )
+
+    assert response.status_code == 400
+    assert "not a valid supported image" in response.json()["detail"]
+    assert not called
+
+
+@pytest.mark.parametrize("image_format", ["BMP", "GIF", "TIFF", "WEBP"])
+def test_image_validation_accepts_common_raster_formats(image_format: str) -> None:
     image_buffer = BytesIO()
-    Image.new("RGB", (16, 16)).save(image_buffer, format="BMP")
+    Image.new("RGB", (16, 16)).save(image_buffer, format=image_format)
     response = client.post(
         "/api/images/validate",
-        files={"file": ("sample.bmp", image_buffer.getvalue(), "image/bmp")},
+        files={
+            "file": (
+                f"sample.{image_format.lower()}",
+                image_buffer.getvalue(),
+                "application/octet-stream",
+            )
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["format"] == image_format
+
+
+def test_image_validation_rejects_unsupported_decodable_format() -> None:
+    image_buffer = BytesIO()
+    Image.new("RGB", (16, 16)).save(image_buffer, format="ICO")
+    response = client.post(
+        "/api/images/validate",
+        files={"file": ("sample.ico", image_buffer.getvalue(), "image/x-icon")},
     )
 
     assert response.status_code == 415
-    assert "Only JPEG and PNG" in response.json()["detail"]
+    assert "Supported image formats are" in response.json()["detail"]
 
 
 def test_image_validation_rejects_excessive_pixel_count(monkeypatch) -> None:
@@ -172,6 +238,9 @@ def test_prediction_response_includes_gradcam_visualizations(monkeypatch) -> Non
         lambda _content: {
             "prediction": "glaucoma",
             "confidence": 0.8,
+            "glaucoma_probability": 0.8,
+            "threshold": 0.5,
+            "threshold_source": "validation-selected checkpoint threshold",
             "disclaimer": "Research only.",
             "model_name": "resnet50",
             "explanation_method": "Grad-CAM",

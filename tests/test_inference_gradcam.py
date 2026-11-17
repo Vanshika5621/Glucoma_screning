@@ -39,12 +39,21 @@ def test_prediction_returns_class_specific_gradcam_images(monkeypatch) -> None:
     monkeypatch.setattr(
         inference_service,
         "_load_model",
-        lambda: (model, torch, "resnet50", torch.device("cpu")),
+        lambda: (
+            model,
+            torch,
+            "resnet50",
+            torch.device("cpu"),
+            0.5,
+            "validation-selected checkpoint threshold",
+        ),
     )
 
     result = inference_service.predict_image(image_bytes())
 
     assert result["prediction"] == "glaucoma"
+    assert result["threshold"] == 0.5
+    assert result["glaucoma_probability"] >= result["threshold"]
     assert result["explanation_method"] == "Grad-CAM"
     assert result["explanation_error"] == ""
     assert result["original_image"].startswith("data:image/png;base64,")
@@ -57,7 +66,14 @@ def test_prediction_survives_unsupported_gradcam_layer(monkeypatch) -> None:
     monkeypatch.setattr(
         inference_service,
         "_load_model",
-        lambda: (model, torch, "efficientnet_b0", torch.device("cpu")),
+        lambda: (
+            model,
+            torch,
+            "efficientnet_b0",
+            torch.device("cpu"),
+            0.5,
+            "validation-selected checkpoint threshold",
+        ),
     )
 
     result = inference_service.predict_image(image_bytes())

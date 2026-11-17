@@ -21,7 +21,7 @@ EXPLANATION_NOTE = (
 
 
 @lru_cache(maxsize=1)
-def _load_model() -> tuple[object, object, str, object] | None:
+def _load_model() -> tuple[object, object, str, object, float, str] | None:
     checkpoint_path = model_path()
     if not checkpoint_path.is_file():
         return None
@@ -46,6 +46,19 @@ def _load_model() -> tuple[object, object, str, object] | None:
             raise ValueError("Checkpoint image size is missing or incompatible.")
         if checkpoint.get("preprocessing_version") != PREPROCESSING_VERSION:
             raise ValueError("Checkpoint preprocessing is missing or incompatible.")
+        stored_threshold = checkpoint.get("threshold")
+        if stored_threshold is None:
+            threshold = 0.5
+            threshold_source = "legacy checkpoint fallback (0.5)"
+        elif (
+            isinstance(stored_threshold, bool)
+            or not isinstance(stored_threshold, (int, float))
+            or not 0 <= stored_threshold <= 1
+        ):
+            raise ValueError("Checkpoint threshold must be between zero and one.")
+        else:
+            threshold = float(stored_threshold)
+            threshold_source = "validation-selected checkpoint threshold"
         typed_architecture: Architecture = architecture
         model = build_model(typed_architecture, pretrained=False)
         model.load_state_dict(checkpoint["model_state_dict"])
@@ -54,7 +67,7 @@ def _load_model() -> tuple[object, object, str, object] | None:
         )
         model.to(device)
         model.eval()
-        return model, torch, typed_architecture, device
+        return model, torch, typed_architecture, device, threshold, threshold_source
     except (
         ImportError,
         IndexError,
@@ -91,7 +104,7 @@ def _predict_image_locked(image_bytes: bytes) -> dict[str, str | float]:
             "was made and the image was not retained."
         )
 
-    model, torch, architecture, device = loaded
+    model, torch, architecture, device, threshold, threshold_source = loaded
     from src.glaucoma_ml.data.preprocessing import (
         build_image_transform,
         decode_and_resize,
@@ -105,11 +118,15 @@ def _predict_image_locked(image_bytes: bytes) -> dict[str, str | float]:
     tensor = build_image_transform()(image).unsqueeze(0).to(device)
     with torch.inference_mode():
         probabilities = torch.softmax(model(tensor), dim=1)[0]
-    predicted_index = int(torch.argmax(probabilities).item())
+    glaucoma_probability = float(probabilities[1].item())
+    predicted_index = int(glaucoma_probability >= threshold)
     classes = ("normal", "glaucoma")
     result: dict[str, str | float] = {
         "prediction": classes[predicted_index],
         "confidence": float(probabilities[predicted_index].item()),
+        "glaucoma_probability": glaucoma_probability,
+        "threshold": threshold,
+        "threshold_source": threshold_source,
         "disclaimer": DISCLAIMER,
         "model_name": architecture,
         "explanation_method": "Grad-CAM",

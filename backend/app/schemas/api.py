@@ -17,6 +17,9 @@ class ImageValidationResponse(BaseModel):
 class PredictionResponse(BaseModel):
     prediction: str
     confidence: float
+    glaucoma_probability: float
+    threshold: float
+    threshold_source: str
     disclaimer: str
     model_name: str
     explanation_method: str

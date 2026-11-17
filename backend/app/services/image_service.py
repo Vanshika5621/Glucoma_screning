@@ -7,7 +7,8 @@ from PIL import Image, UnidentifiedImageError
 from app.core.config import max_upload_bytes
 
 MAX_IMAGE_PIXELS = 40_000_000
-ALLOWED_IMAGE_FORMATS = {"JPEG", "PNG"}
+ALLOWED_IMAGE_FORMATS = {"JPEG", "PNG", "BMP", "GIF", "TIFF", "WEBP"}
+SUPPORTED_IMAGE_FORMATS = "JPEG, PNG, BMP, GIF, TIFF, and WEBP"
 
 
 async def read_validated_image(file: UploadFile) -> tuple[bytes, str, int, int]:
@@ -31,7 +32,7 @@ async def read_validated_image(file: UploadFile) -> tuple[bytes, str, int, int]:
                 ):
                     raise HTTPException(
                         status_code=415,
-                        detail="Only JPEG and PNG images are supported.",
+                        detail=f"Supported image formats are {SUPPORTED_IMAGE_FORMATS}.",
                     )
                 width, height = image.size
                 if width * height > MAX_IMAGE_PIXELS:
@@ -56,7 +57,7 @@ async def read_validated_image(file: UploadFile) -> tuple[bytes, str, int, int]:
     ) as error:
         raise HTTPException(
             status_code=400,
-            detail="The file is not a valid JPEG or PNG image.",
+            detail="The file is not a valid supported image.",
         ) from error
 
     return content, image_format, width, height

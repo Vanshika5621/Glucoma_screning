@@ -10,7 +10,11 @@ from src.glaucoma_ml.evaluation.evaluate_checkpoint import (
     load_evaluation_metadata,
     load_compatible_checkpoint,
 )
-from src.glaucoma_ml.evaluation.report import create_report, save_report
+from src.glaucoma_ml.evaluation.report import (
+    create_report,
+    save_report,
+    select_threshold_for_recall,
+)
 
 
 def test_report_uses_supplied_test_observations_and_saves_real_outputs(tmp_path) -> None:
@@ -34,7 +38,11 @@ def test_report_uses_supplied_test_observations_and_saves_real_outputs(tmp_path)
     assert report["sensitivity"] == 1.0
     assert report["specificity"] == 0.5
     assert report["roc_auc"] == 0.75
+    assert report["pr_auc"] is not None
+    assert report["recall_ci_95"]["lower"] <= report["recall"] <= report["recall_ci_95"]["upper"]
     assert report["test_samples"] == 4
+    assert report["positive_samples"] == 2
+    assert report["normal_baseline_accuracy"] == 0.5
 
     save_report(report, tmp_path)
 
@@ -144,6 +152,44 @@ def test_official_test_report_includes_test_sample_count() -> None:
 
     assert report["evaluation_split"] == "official_test"
     assert report["test_samples"] == 4
+
+
+def test_report_uses_the_supplied_decision_threshold() -> None:
+    report = create_report(
+        labels=[0, 0, 1, 1],
+        scores=[0.1, 0.4, 0.3, 0.9],
+        training_history=[],
+        architecture="resnet50",
+        dataset_name="training-set",
+        threshold=0.25,
+    )
+
+    assert report["threshold"] == 0.25
+    assert report["recall"] == 1.0
+    assert report["confusion_matrix"] == [[1, 1], [0, 2]]
+
+
+def test_threshold_selection_meets_recall_and_maximizes_precision() -> None:
+    result = select_threshold_for_recall(
+        labels=[0, 0, 1, 1],
+        scores=[0.2, 0.7, 0.6, 0.8],
+        target_recall=0.9,
+    )
+
+    assert result == {
+        "threshold": 0.6,
+        "target_recall": 0.9,
+        "validation_recall": 1.0,
+        "validation_precision": 2 / 3,
+    }
+
+
+def test_threshold_selection_requires_both_validation_classes() -> None:
+    with pytest.raises(ValueError, match="both classes"):
+        select_threshold_for_recall(
+            labels=[0, 0],
+            scores=[0.1, 0.2],
+        )
 
 
 def test_evaluation_does_not_overwrite_existing_output(tmp_path: Path) -> None:

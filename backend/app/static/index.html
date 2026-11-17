@@ -198,69 +198,59 @@
   </head>
   <body>
     <main>
-      <h1>Fundus image research demo</h1>
-      <p class="intro">
-        Upload a retinal fundus photo to prepare for an experimental research
-        workflow. A regular selfie of the front of the eye is not supported.
-      </p>
+      <h1>Glaucoma screening</h1>
 
       <section class="section" aria-labelledby="upload-heading">
-        <h2 id="upload-heading">Choose a retinal image</h2>
-        <p class="help">
-          Use a JPEG or PNG fundus photograph that shows the retina and optic
-          nerve. Maximum file size: 10 MB. If you choose to validate it, the
-          image is sent only to this locally running app and not retained after
-          the request.
-        </p>
-
+        <h2 id="upload-heading">Upload image</h2>
         <form id="upload-form" class="upload-box">
-          <label for="fundus-image">Retinal fundus image</label>
+          <label for="fundus-image">Choose an image (up to 10 MB)</label>
           <input
             id="fundus-image"
             name="file"
             type="file"
-            accept=".jpg,.jpeg,.png,image/jpeg,image/png"
+            accept="image/*"
             required
-            aria-describedby="image-help"
+            aria-describedby="upload-status"
           >
-          <p id="image-help" class="help">
-            This demo cannot verify that an image is actually a fundus photo.
-          </p>
           <img id="preview" alt="Preview of the selected image">
-          <p id="upload-status" class="status" role="status" aria-live="polite">
-            Checking whether a model is configured…
-          </p>
-          <button id="submit-button" type="submit" disabled>
-            Validate image (no prediction)
-          </button>
+          <p id="upload-status" class="status" role="status" aria-live="polite" hidden></p>
+          <button id="submit-button" type="submit" disabled>Analyze image</button>
         </form>
       </section>
 
-      <aside class="notice" aria-label="Important medical information">
-        <strong>Important:</strong> This learning project is not a medical
-        device and cannot diagnose glaucoma. No trained model is currently
-        configured, so no prediction or confidence score will be produced.
-        Do not use this app for medical decisions. Contact an eye-care
-        professional about health concerns.
-      </aside>
+      <section class="section" aria-labelledby="prediction-heading">
+        <h2 id="prediction-heading">Prediction</h2>
+        <p id="result-message" class="status" role="status" aria-live="polite">
+          Upload an image to see its prediction and confidence.
+        </p>
+        <div id="result-details" hidden>
+          <p id="prediction-value" class="prediction" role="status" aria-live="polite"></p>
+          <p>Confidence: <strong id="confidence-value"></strong></p>
+          <p class="help">Model confidence, not certainty.</p>
+        </div>
+      </section>
 
-      <p><a href="/docs">Open the API documentation</a></p>
+      <p class="help">
+        Research use only. Not for diagnosis or treatment.
+      </p>
     </main>
 
     <script>
       const form = document.querySelector("#upload-form");
       const input = document.querySelector("#fundus-image");
-      const status = document.querySelector("#upload-status");
+      const uploadStatus = document.querySelector("#upload-status");
       const submitButton = document.querySelector("#submit-button");
       const preview = document.querySelector("#preview");
+      const resultMessage = document.querySelector("#result-message");
+      const resultDetails = document.querySelector("#result-details");
       const maxBytes = 10 * 1024 * 1024;
-      let serviceAvailable = false;
       let modelAvailable = false;
       let previewUrl = null;
 
-      function showStatus(message, isError = false) {
-        status.textContent = message;
-        status.dataset.state = isError ? "error" : "info";
+      function showUploadStatus(message, isError = false) {
+        uploadStatus.textContent = message;
+        uploadStatus.hidden = !message;
+        uploadStatus.dataset.state = isError ? "error" : "info";
       }
 
       fetch("/api/health")
@@ -271,23 +261,24 @@
           return response.json();
         })
         .then((health) => {
-          serviceAvailable = health.status === "ok";
           modelAvailable = health.predictions_available;
-          submitButton.disabled = true;
-          showStatus(
-            modelAvailable
-              ? "A research model is available. Uploads are not retained."
-              : "App is running, but no model is configured. You can validate the file format; no prediction will be made."
-          );
+          submitButton.disabled = !modelAvailable || !input.files[0];
+          if (!modelAvailable) {
+            resultMessage.textContent =
+              "Prediction is unavailable because no model is loaded.";
+          }
         })
         .catch(() => {
-          showStatus(
-            "Application status could not be checked. Refresh the page to try again.",
-            true
-          );
+          resultMessage.textContent =
+            "Prediction is unavailable because the app status could not be checked.";
         });
 
       input.addEventListener("change", () => {
+        showUploadStatus("");
+        resultDetails.hidden = true;
+        resultMessage.hidden = false;
+        resultMessage.textContent =
+          "Upload an image to see its prediction and confidence.";
         if (previewUrl) {
           URL.revokeObjectURL(previewUrl);
           previewUrl = null;
@@ -298,54 +289,62 @@
 
         const file = input.files[0];
         if (!file) return;
-        if (!["image/jpeg", "image/png"].includes(file.type)) {
+        if (file.type && !file.type.startsWith("image/")) {
           input.value = "";
-          showStatus("Choose a JPEG or PNG retinal image.", true);
+          showUploadStatus("Choose a supported retinal image.", true);
           return;
         }
         if (file.size > maxBytes) {
           input.value = "";
-          showStatus("The image is larger than 10 MB. Choose a smaller file.", true);
+          showUploadStatus("The image is larger than 10 MB. Choose a smaller file.", true);
           return;
         }
 
         previewUrl = URL.createObjectURL(file);
         preview.src = previewUrl;
         preview.style.display = "block";
-        submitButton.disabled = !serviceAvailable;
-        showStatus(
-          modelAvailable
-            ? "Image selected. Choose Check image to continue."
-            : "Image selected. You can validate its file format; no prediction will be made."
-        );
+        submitButton.disabled = !modelAvailable;
       });
 
       form.addEventListener("submit", async (event) => {
         event.preventDefault();
-        if (!serviceAvailable || !input.files[0]) return;
+        if (!modelAvailable || !input.files[0]) return;
 
         submitButton.disabled = true;
-        showStatus(
-          modelAvailable ? "Checking the image…" : "Validating the image file…"
-        );
+        showUploadStatus("Analyzing image…");
+        resultMessage.hidden = true;
+        resultDetails.hidden = true;
         const data = new FormData();
         data.append("file", input.files[0]);
 
         try {
-          const endpoint = modelAvailable ? "/api/predict" : "/api/images/validate";
-          const response = await fetch(endpoint, {
+          const response = await fetch("/api/predict", {
             method: "POST",
             body: data,
           });
           const result = await response.json();
           if (!response.ok) {
-            throw new Error(result.detail || "The image could not be checked.");
+            throw new Error(result.detail || "The image could not be analyzed.");
           }
-          showStatus(result.message || "Image received.");
+          const confidence = Number(result.confidence);
+          if (!Number.isFinite(confidence)) {
+            throw new Error("The prediction response did not include confidence.");
+          }
+          document.querySelector("#prediction-value").textContent =
+            result.prediction === "glaucoma" ? "Yes" : "No";
+          document.querySelector("#confidence-value").textContent =
+            `${(confidence * 100).toFixed(1)}%`;
+          resultDetails.hidden = false;
+          showUploadStatus("");
         } catch (error) {
-          showStatus(error.message, true);
+          showUploadStatus(
+            error instanceof Error ? error.message : "The image could not be analyzed.",
+            true
+          );
+          resultMessage.textContent = "No prediction is available.";
+          resultMessage.hidden = false;
         } finally {
-          submitButton.disabled = !serviceAvailable || !input.files[0];
+          submitButton.disabled = !modelAvailable || !input.files[0];
         }
       });
 

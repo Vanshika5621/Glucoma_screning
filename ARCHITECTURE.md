@@ -114,10 +114,11 @@ configuration, split manifest, training history, best checkpoint, and
 evaluation outputs in a per-run directory.
 
 If a complete set of REFUGE official train/validation/test partitions is
-provided, the splitter preserves them. Otherwise it uses deterministic
-stratified image-level splitting or patient-group splitting when complete,
-genuine patient IDs are present. The inspected REFUGE metadata did not establish
-patient IDs; do not claim those splits are patient-wise.
+provided, the splitter preserves them and checks patient IDs do not overlap.
+Otherwise it uses deterministic stratified patient-group splitting. Training
+and cross-validation reject missing patient IDs rather than falling back to
+image-level splitting. The inspected REFUGE metadata does not provide verified
+patient IDs, so do not invent IDs or claim those partitions are patient-wise.
 
 ResNet50 Grad-CAM targets `layer4[-1].conv3`; EfficientNet-B0 targets its final
 feature block. Grad-CAM is an approximate, predicted-class-specific model

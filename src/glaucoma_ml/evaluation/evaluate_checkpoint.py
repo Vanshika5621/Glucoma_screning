@@ -168,6 +168,22 @@ def main() -> None:
         checkpoint_path,
         device,
     )
+    threshold_value = checkpoint.get("threshold")
+    if threshold_value is None:
+        threshold = 0.5
+        threshold_source = (
+            "legacy checkpoint: explicit 0.5 fallback; threshold was not tuned "
+            "and must not be interpreted as validation-selected"
+        )
+    elif (
+        isinstance(threshold_value, bool)
+        or not isinstance(threshold_value, (int, float))
+        or not 0 <= threshold_value <= 1
+    ):
+        raise ValueError("Checkpoint threshold must be a probability from zero to one.")
+    else:
+        threshold = float(threshold_value)
+        threshold_source = "checkpoint metadata; selected using validation data"
     loader = DataLoader(
         FundusDataset(evaluation_frame, training=False),
         batch_size=args.batch_size,
@@ -187,7 +203,9 @@ def main() -> None:
         architecture=architecture,
         dataset_name=str(checkpoint.get("dataset_name", "unknown")),
         evaluation_split=args.split,
+        threshold=threshold,
     )
+    class_counts = evaluation_frame["label"].value_counts().to_dict()
     report.update(
         {
             "evaluation_dataset": "REFUGE",
@@ -198,7 +216,12 @@ def main() -> None:
             "preprocessing_version": PREPROCESSING_VERSION,
             "patient_wise_split": False,
             "patient_ids_available": False,
-            "threshold_selection": f"fixed 0.5; not tuned on this {args.split} set",
+            "threshold_selection": threshold_source,
+            "threshold_source": threshold_source,
+            "class_counts": {
+                label: int(class_counts.get(label, 0))
+                for label in ("normal", "glaucoma")
+            },
             "evaluation_loss": loss,
         }
     )
@@ -208,6 +231,8 @@ def main() -> None:
     print(f"Glaucoma sensitivity: {report['sensitivity']:.4f}")
     print(f"Specificity: {report['specificity']:.4f}")
     print(f"ROC-AUC: {report['roc_auc']}")
+    print(f"PR-AUC: {report['pr_auc']}")
+    print(f"Threshold: {report['threshold']:.4f} ({threshold_source})")
     print(f"Confusion matrix [normal, glaucoma]: {report['confusion_matrix']}")
     print(f"Saved {args.split}-only report to {report_path}")
 

@@ -1,7 +1,11 @@
+from io import BytesIO
+from pathlib import Path
+
 import pandas as pd
+from PIL import Image
 import pytest
 
-from src.glaucoma_ml.data.manifest import split_manifest
+from src.glaucoma_ml.data.manifest import load_manifest, split_manifest
 
 
 def test_split_manifest_keeps_patient_ids_disjoint() -> None:
@@ -40,6 +44,18 @@ def test_split_manifest_rejects_missing_patient_ids() -> None:
     )
 
     with pytest.raises(ValueError, match="missing values"):
+        split_manifest(frame)
+
+
+def test_split_manifest_rejects_absent_patient_ids() -> None:
+    frame = pd.DataFrame(
+        {
+            "image_path": ["one.png", "two.png", "three.png", "four.png"],
+            "label": ["normal", "glaucoma", "normal", "glaucoma"],
+        }
+    )
+
+    with pytest.raises(ValueError, match="genuine patient_id"):
         split_manifest(frame)
 
 
@@ -131,6 +147,7 @@ def test_split_manifest_preserves_complete_official_partitions() -> None:
                     "image_path": f"{split_name}-{label}.jpg",
                     "label": label,
                     "official_split": split_name,
+                    "patient_id": f"{split_name}-{label}",
                 }
             )
     frame = pd.DataFrame(rows)
@@ -142,23 +159,104 @@ def test_split_manifest_preserves_complete_official_partitions() -> None:
     assert set(test["official_split"]) == {"official_test"}
 
 
+def test_split_manifest_rejects_patient_overlap_in_official_partitions() -> None:
+    rows = []
+    for split_name in (
+        "official_train",
+        "official_validation",
+        "official_test",
+    ):
+        for label in ("normal", "glaucoma"):
+            patient_id = (
+                "reused-patient"
+                if split_name == "official_validation" and label == "normal"
+                else f"{split_name}-{label}"
+            )
+            if split_name == "official_train" and label == "normal":
+                patient_id = "reused-patient"
+            rows.append(
+                {
+                    "image_path": f"{split_name}-{label}.jpg",
+                    "label": label,
+                    "official_split": split_name,
+                    "patient_id": patient_id,
+                }
+            )
+    frame = pd.DataFrame(rows)
+
+    with pytest.raises(RuntimeError, match="Patient leakage"):
+        split_manifest(frame)
+
+
 def test_split_manifest_rejects_partial_official_partitions() -> None:
     frame = pd.DataFrame(
         [
-            {"image_path": "one.jpg", "label": "normal", "official_split": "official_train"},
-            {"image_path": "two.jpg", "label": "glaucoma", "official_split": "official_train"},
+            {
+                "image_path": "one.jpg",
+                "label": "normal",
+                "official_split": "official_train",
+                "patient_id": "one",
+            },
+            {
+                "image_path": "two.jpg",
+                "label": "glaucoma",
+                "official_split": "official_train",
+                "patient_id": "two",
+            },
             {
                 "image_path": "three.jpg",
                 "label": "normal",
                 "official_split": "official_validation",
+                "patient_id": "three",
             },
             {
                 "image_path": "four.jpg",
                 "label": "glaucoma",
                 "official_split": "official_validation",
+                "patient_id": "four",
             },
         ]
     )
 
     with pytest.raises(ValueError, match="only some official partitions"):
         split_manifest(frame)
+
+
+def test_load_manifest_rejects_byte_identical_images_across_paths(
+    tmp_path: Path,
+) -> None:
+    image_buffer = BytesIO()
+    Image.new("RGB", (16, 16), color=(20, 40, 60)).save(
+        image_buffer,
+        format="PNG",
+    )
+    image_bytes = image_buffer.getvalue()
+    first_image = tmp_path / "normal.png"
+    second_image = tmp_path / "glaucoma-copy.png"
+    first_image.write_bytes(image_bytes)
+    second_image.write_bytes(image_bytes)
+    manifest_path = tmp_path / "manifest.csv"
+    pd.DataFrame(
+        [
+            {"image_path": first_image.name, "label": "normal"},
+            {"image_path": second_image.name, "label": "glaucoma"},
+        ]
+    ).to_csv(manifest_path, index=False)
+
+    with pytest.raises(ValueError, match="byte-identical images"):
+        load_manifest(manifest_path)
+
+
+def test_load_manifest_accepts_distinct_real_image_bytes(tmp_path: Path) -> None:
+    rows = []
+    for label, color in (("normal", (10, 20, 30)), ("glaucoma", (30, 20, 10))):
+        image_path = tmp_path / f"{label}.png"
+        Image.new("RGB", (16, 16), color=color).save(image_path, format="PNG")
+        rows.append({"image_path": image_path.name, "label": label})
+    manifest_path = tmp_path / "manifest.csv"
+    pd.DataFrame(rows).to_csv(manifest_path, index=False)
+
+    loaded = load_manifest(manifest_path)
+
+    assert set(loaded["label"]) == {"normal", "glaucoma"}
+    assert len(loaded) == 2
